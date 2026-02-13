@@ -29,41 +29,40 @@ jobs:
 
       - name: Force Fix Android Gradle
         run: |
+          # Move to the extracted frontend folder
           cd frontend
+          
+          # 1. Re-initialize Android files
           flutter create --platforms android .
           
-          # 1. Create a complete local.properties
-          cat <<EOF > android/local.properties
-          sdk.dir=$ANDROID_SDK_ROOT
-          flutter.sdk=$FLUTTER_ROOT
-          flutter.buildMode=release
-          flutter.versionName=1.0.0
-          flutter.versionCode=1
-          flutter.compileSdkVersion=34
-          flutter.targetSdkVersion=34
-          flutter.minSdkVersion=21
-          EOF
+          # 2. Define the exact path to the Flutter SDK and the Project Source
+          # This fixes the "Must provide Flutter source directory" error
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+          echo "flutter.versionName=1.0.0" >> android/local.properties
+          echo "flutter.versionCode=1" >> android/local.properties
+          echo "flutter.compileSdkVersion=34" >> android/local.properties
+          echo "flutter.targetSdkVersion=34" >> android/local.properties
+          echo "flutter.minSdkVersion=21" >> android/local.properties
 
-          # 2. INJECT FLUTTER PROPERTY TO ALL SUBPROJECTS
-          # This specifically fixes the "unknown property 'flutter'" error in plugins
+          # 3. Inject the flutter extension to all subprojects (Plugin Fix)
           sed -i "/allprojects {/a \    subprojects {\n        ext.flutter = [\n            compileSdkVersion: 34,\n            minSdkVersion: 21,\n            targetSdkVersion: 34\n        ]\n    }" android/build.gradle
 
-          # 3. Add Permissions to Manifest
+          # 4. Permissions
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
 
       - name: Build APK
         run: |
           cd frontend
           flutter pub get
+          # Pass the current directory as the source explicitly
           flutter build apk --release --no-pub
-          # --no-pub prevents Flutter from overwriting our injected Gradle fixes
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Success-Build
+          name: OneChat-Working-APK
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
