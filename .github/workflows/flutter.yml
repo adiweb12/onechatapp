@@ -15,7 +15,6 @@ jobs:
 
       - name: Unzip Project Files
         run: |
-          # Unzip the file and overwrite existing files if necessary
           unzip -o OneChat.zip
           
       - name: Setup Java
@@ -29,29 +28,38 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Reconstruct Android Folder
+      - name: Reconstruct Android Project
         run: |
-          # Move into the frontend folder extracted from the zip
           cd frontend
-          
-          # Re-initialize the android platform files
           flutter create --platforms android .
           
-          # Inject permissions for Internet, Bluetooth, and Location
+          # 1. Inject Permissions
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
 
+          # 2. FIX: Hardcode the missing Flutter variables into local.properties
+          # This tells the plugins exactly which Android version to use.
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+          echo "flutter.buildMode=release" >> android/local.properties
+          echo "flutter.versionName=1.0.0" >> android/local.properties
+          echo "flutter.versionCode=1" >> android/local.properties
+          echo "flutter.compileSdkVersion=34" >> android/local.properties
+          echo "flutter.targetSdkVersion=34" >> android/local.properties
+          echo "flutter.minSdkVersion=21" >> android/local.properties
+
       - name: Build APK
         run: |
           cd frontend
           flutter pub get
+          # Clean before build to ensure no cache conflicts
+          flutter clean
           flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Built-From-Zip
+          name: OneChat-Working-Build
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
