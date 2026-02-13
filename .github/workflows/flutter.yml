@@ -27,38 +27,40 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Force Fix Android Gradle
+      - name: Force Fix Pathing & Gradle
         run: |
-          # Move to the extracted frontend folder
           cd frontend
+          
+          # Capture the absolute path to the frontend folder
+          FRONTEND_PATH=$(pwd)
           
           # 1. Re-initialize Android files
           flutter create --platforms android .
           
-          # 2. Define the exact path to the Flutter SDK and the Project Source
-          # This fixes the "Must provide Flutter source directory" error
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
-          echo "flutter.versionName=1.0.0" >> android/local.properties
-          echo "flutter.versionCode=1" >> android/local.properties
-          echo "flutter.compileSdkVersion=34" >> android/local.properties
-          echo "flutter.targetSdkVersion=34" >> android/local.properties
-          echo "flutter.minSdkVersion=21" >> android/local.properties
+          # 2. Create local.properties with ABSOLUTE PATHS
+          # This specifically fixes "Must provide Flutter source directory"
+          cat <<EOF > android/local.properties
+          sdk.dir=$ANDROID_SDK_ROOT
+          flutter.sdk=$FLUTTER_ROOT
+          flutter.versionName=1.0.0
+          flutter.versionCode=1
+          flutter.compileSdkVersion=34
+          flutter.targetSdkVersion=34
+          flutter.minSdkVersion=21
+          EOF
 
-          # 3. Inject the flutter extension to all subprojects (Plugin Fix)
+          # 3. Inject the project root into the app's build.gradle
+          # This forces Gradle to look in the unzipped folder for your Dart code
+          echo "flutter.sourceDir=$FRONTEND_PATH" >> android/local.properties
+
+          # 4. Inject the flutter extension to all subprojects (Plugin Fix)
           sed -i "/allprojects {/a \    subprojects {\n        ext.flutter = [\n            compileSdkVersion: 34,\n            minSdkVersion: 21,\n            targetSdkVersion: 34\n        ]\n    }" android/build.gradle
-
-          # 4. Permissions
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
 
       - name: Build APK
         run: |
           cd frontend
           flutter pub get
-          # Pass the current directory as the source explicitly
+          # We build using the local directory context
           flutter build apk --release --no-pub
 
       - name: Upload APK
