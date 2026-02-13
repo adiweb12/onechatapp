@@ -1,0 +1,57 @@
+name: Unzip and Build OneChat APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Unzip Project Files
+        run: |
+          # Unzip the file and overwrite existing files if necessary
+          unzip -o OneChat.zip
+          
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+
+      - name: Reconstruct Android Folder
+        run: |
+          # Move into the frontend folder extracted from the zip
+          cd frontend
+          
+          # Re-initialize the android platform files
+          flutter create --platforms android .
+          
+          # Inject permissions for Internet, Bluetooth, and Location
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
+
+      - name: Build APK
+        run: |
+          cd frontend
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneChat-Built-From-Zip
+          path: frontend/build/app/outputs/flutter-apk/app-release.apk
