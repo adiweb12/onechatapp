@@ -13,8 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Unzip Project Files
-        run: unzip -o OneChat.zip
+      - name: Extract Project
+        run: |
+          unzip -o OneChat.zip
+          # Move everything from frontend/ to the root so paths are simple
+          cp -r frontend/* .
+          rm -rf frontend
           
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -27,44 +31,36 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Force Fix Pathing & Gradle
+      - name: Repair and Patch Android
         run: |
-          cd frontend
-          
-          # Capture the absolute path to the frontend folder
-          FRONTEND_PATH=$(pwd)
-          
-          # 1. Re-initialize Android files
+          # 1. Re-create the android shell in the current directory
           flutter create --platforms android .
           
-          # 2. Create local.properties with ABSOLUTE PATHS
-          # This specifically fixes "Must provide Flutter source directory"
-          cat <<EOF > android/local.properties
-          sdk.dir=$ANDROID_SDK_ROOT
-          flutter.sdk=$FLUTTER_ROOT
-          flutter.versionName=1.0.0
-          flutter.versionCode=1
-          flutter.compileSdkVersion=34
-          flutter.targetSdkVersion=34
-          flutter.minSdkVersion=21
-          EOF
+          # 2. Hardcode the SDK and Source paths
+          # We use '.' to tell it the source is EXACTLY here
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+          echo "flutter.sourceDir=$(pwd)" >> android/local.properties
+          echo "flutter.compileSdkVersion=34" >> android/local.properties
+          echo "flutter.targetSdkVersion=34" >> android/local.properties
+          echo "flutter.minSdkVersion=21" >> android/local.properties
 
-          # 3. Inject the project root into the app's build.gradle
-          # This forces Gradle to look in the unzipped folder for your Dart code
-          echo "flutter.sourceDir=$FRONTEND_PATH" >> android/local.properties
-
-          # 4. Inject the flutter extension to all subprojects (Plugin Fix)
+          # 3. Apply the Subproject Fix for flutter_blue_plus
           sed -i "/allprojects {/a \    subprojects {\n        ext.flutter = [\n            compileSdkVersion: 34,\n            minSdkVersion: 21,\n            targetSdkVersion: 34\n        ]\n    }" android/build.gradle
+
+          # 4. Inject Permissions
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
 
       - name: Build APK
         run: |
-          cd frontend
           flutter pub get
-          # We build using the local directory context
           flutter build apk --release --no-pub
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: OneChat-Working-APK
-          path: frontend/build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
