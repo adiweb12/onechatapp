@@ -27,14 +27,12 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Force Fix Android Configuration
+      - name: Force Fix Android Gradle
         run: |
           cd frontend
-          # 1. Create a fresh android project
           flutter create --platforms android .
           
-          # 2. Fix the Gradle scripts that are crashing the plugins
-          # We force-write a local.properties that includes EVERY required version
+          # 1. Create a complete local.properties
           cat <<EOF > android/local.properties
           sdk.dir=$ANDROID_SDK_ROOT
           flutter.sdk=$FLUTTER_ROOT
@@ -46,14 +44,13 @@ jobs:
           flutter.minSdkVersion=21
           EOF
 
-          # 3. Patch the main build.gradle to ensure it can see the 'flutter' property
-          # This is the specific fix for the "unknown property 'flutter'" error
-          sed -i 's/project.extensions.findByType(com.android.build.gradle.LibraryExtension)/android/g' /home/runner/.pub-cache/hosted/pub.dev/flutter_blue_plus_android-7.0.4/android/build.gradle || true
+          # 2. INJECT FLUTTER PROPERTY TO ALL SUBPROJECTS
+          # This specifically fixes the "unknown property 'flutter'" error in plugins
+          sed -i "/allprojects {/a \    subprojects {\n        ext.flutter = [\n            compileSdkVersion: 34,\n            minSdkVersion: 21,\n            targetSdkVersion: 34\n        ]\n    }" android/build.gradle
 
-          # 4. Inject Permissions
+          # 3. Add Permissions to Manifest
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
@@ -62,11 +59,11 @@ jobs:
         run: |
           cd frontend
           flutter pub get
-          # We use --no-pub to prevent it from resetting our manual fixes
           flutter build apk --release --no-pub
+          # --no-pub prevents Flutter from overwriting our injected Gradle fixes
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Working-APK
+          name: OneChat-Success-Build
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
