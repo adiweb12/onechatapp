@@ -24,34 +24,38 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Repair Android and Plugins
+      - name: Patch Android Project
         run: |
           cd frontend
           
-          # 1. Initialize android folder
+          # 1. Let Flutter create the base files
           flutter create --platforms android .
           
-          # 2. Upgrade the Gradle Wrapper to 8.2
+          # 2. Upgrade Gradle Wrapper to 8.2
           sed -i 's/gradle-7.6.3-all.zip/gradle-8.2-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
+
+          # 3. FIX for 'Could not get unknown property flutter': 
+          # We must add the flutter extension to the app's build.gradle
+          # This is what flutter_blue_plus is looking for.
+          sed -i '/android {/a \    namespace "com.example.onechatapp"' android/app/build.gradle
           
-          # 3. FIX: Inject the missing 'flutter' extension into the root build.gradle
-          # This stops the flutter_blue_plus 'null object' and 'compileSdkVersion' errors
+          # 4. Inject the Global Plugin version fix into the ROOT build.gradle
           cat <<EOF > android/build.gradle
           allprojects {
               repositories {
                   google()
                   mavenCentral()
               }
-              subprojects {
-                  afterEvaluate { project ->
-                      if (project.hasProperty('android')) {
-                          project.android {
-                              compileSdkVersion 34
-                              buildToolsVersion "34.0.0"
-                              defaultConfig {
-                                  minSdkVersion 21
-                                  targetSdkVersion 34
-                              }
+          }
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.extensions.findByName("android") != null) {
+                      project.android {
+                          compileSdkVersion 34
+                          buildToolsVersion "34.0.0"
+                          defaultConfig {
+                              minSdkVersion 21
+                              targetSdkVersion 34
                           }
                       }
                   }
@@ -64,53 +68,14 @@ jobs:
           subprojects {
               project.evaluationDependsOn(':app')
           }
-          tasks.register("clean", Delete) {
-              delete rootProject.buildDir
-          }
           EOF
 
-          # 4. Create settings.gradle with Plugin Auto-linking
-          cat <<EOF > android/settings.gradle
-          pluginManagement {
-              def flutterSdkPath = {
-                  def properties = new Properties()
-                  file("local.properties").withInputStream { properties.load(it) }
-                  def flutterSdkPath = properties.getProperty("flutter.sdk")
-                  return flutterSdkPath
-              }()
-              includeBuild("\$flutterSdkPath/packages/flutter_tools/gradle")
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          plugins {
-              id "dev.flutter.flutter-gradle-plugin" version "1.0.0" apply false
-              id "com.android.application" version "8.2.1" apply false
-              id "org.jetbrains.kotlin.android" version "1.8.22" apply false
-          }
-          include ":app"
-          def localPropertiesFile = new File(rootProject.projectDir, "local.properties")
-          def properties = new Properties()
-          localPropertiesFile.withReader("UTF-8") { reader -> properties.load(reader) }
-          def flutterSdkPath = properties.getProperty("flutter.sdk")
-          apply from: "\$flutterSdkPath/packages/flutter_tools/gradle/app_plugin_loader.gradle"
-          EOF
-
-          # 5. Setup local.properties
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
-
-          # 6. Inject ALL Permissions (Internet, BT, WiFi, Hotspot, Location)
+          # 5. Inject ALL requested permissions into the Manifest
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" \/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"\/>' $MANIFEST
@@ -120,7 +85,7 @@ jobs:
         run: |
           cd frontend
           flutter pub get
-          flutter build apk --release --no-pub
+          flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
