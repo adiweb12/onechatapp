@@ -24,7 +24,7 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Repair Android Linkage
+      - name: Repair Android and Plugins
         run: |
           cd frontend
           
@@ -34,7 +34,42 @@ jobs:
           # 2. Upgrade the Gradle Wrapper to 8.2
           sed -i 's/gradle-7.6.3-all.zip/gradle-8.2-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
           
-          # 3. Create settings.gradle WITH PLUGIN AUTO-LINKING
+          # 3. FIX: Inject the missing 'flutter' extension into the root build.gradle
+          # This stops the flutter_blue_plus 'null object' and 'compileSdkVersion' errors
+          cat <<EOF > android/build.gradle
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              subprojects {
+                  afterEvaluate { project ->
+                      if (project.hasProperty('android')) {
+                          project.android {
+                              compileSdkVersion 34
+                              buildToolsVersion "34.0.0"
+                              defaultConfig {
+                                  minSdkVersion 21
+                                  targetSdkVersion 34
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          rootProject.buildDir = '../build'
+          subprojects {
+              project.buildDir = "\${rootProject.buildDir}/\${project.name}"
+          }
+          subprojects {
+              project.evaluationDependsOn(':app')
+          }
+          tasks.register("clean", Delete) {
+              delete rootProject.buildDir
+          }
+          EOF
+
+          # 4. Create settings.gradle with Plugin Auto-linking
           cat <<EOF > android/settings.gradle
           pluginManagement {
               def flutterSdkPath = {
@@ -55,33 +90,31 @@ jobs:
               id "com.android.application" version "8.2.1" apply false
               id "org.jetbrains.kotlin.android" version "1.8.22" apply false
           }
-
           include ":app"
-
-          // THIS PART IS THE FIX: It links all your plugins (Bluetooth, WiFi, etc.)
           def localPropertiesFile = new File(rootProject.projectDir, "local.properties")
           def properties = new Properties()
-          assert localPropertiesFile.exists()
           localPropertiesFile.withReader("UTF-8") { reader -> properties.load(reader) }
-
           def flutterSdkPath = properties.getProperty("flutter.sdk")
-          assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
           apply from: "\$flutterSdkPath/packages/flutter_tools/gradle/app_plugin_loader.gradle"
           EOF
 
-          # 4. Setup local.properties
+          # 5. Setup local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
           echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
-          echo "flutter.minSdkVersion=21" >> android/local.properties
-          echo "flutter.targetSdkVersion=34" >> android/local.properties
-          echo "flutter.compileSdkVersion=34" >> android/local.properties
 
-          # 5. Inject Permissions
+          # 6. Inject ALL Permissions (Internet, BT, WiFi, Hotspot, Location)
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" \/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" \/>' $MANIFEST
 
       - name: Build APK
         run: |
@@ -92,5 +125,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Final-APK
+          name: OneChat-Final-Build
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
