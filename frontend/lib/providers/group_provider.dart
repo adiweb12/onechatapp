@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-class AIProvider with ChangeNotifier {
+class GroupProvider with ChangeNotifier {
   String? _token;
 
   void initialize(String? token) {
