@@ -24,34 +24,39 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Patch for Legacy Plugins
+      - name: Force Patch Plugins & Android
         run: |
           cd frontend
           
-          # 1. Generate base android files
+          # 1. Initialize project
           flutter create --platforms android .
-          
-          # 2. Force use of Gradle 8.2
+          flutter pub get
+
+          # 2. THE NUCLEAR OPTION: Find the plugin in pub-cache and force-inject the SDK version
+          # This bypasses the "unknown property 'flutter'" error entirely
+          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/compileSdkVersion.*/compileSdkVersion 34/' {} +
+          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/targetSdkVersion.*/targetSdkVersion 34/' {} +
+
+          # 3. Upgrade Gradle Wrapper
           sed -i 's/gradle-7.6.3-all.zip/gradle-8.2-all.zip/g' android/gradle/wrapper/gradle-wrapper.properties
 
-          # 3. Create a LEGACY ROOT build.gradle
-          # This provides the classpath needed for old-school plugin evaluation
+          # 4. Standardize the root build.gradle
           cat <<EOF > android/build.gradle
-          buildscript {
-              ext.kotlin_version = '1.8.22'
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.2.1'
-                  classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:\$kotlin_version"
-              }
-          }
           allprojects {
               repositories {
                   google()
                   mavenCentral()
+              }
+          }
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      project.android {
+                          if (it.hasProperty('compileSdkVersion')) {
+                              compileSdkVersion 34
+                          }
+                      }
+                  }
               }
           }
           rootProject.buildDir = '../build'
@@ -63,43 +68,7 @@ jobs:
           }
           EOF
 
-          # 4. Create a LEGACY APP build.gradle
-          # This defines the 'flutter' property that flutter_blue_plus is missing
-          cat <<EOF > android/app/build.gradle
-          def localProperties = new Properties()
-          def localPropertiesFile = rootProject.file('local.properties')
-          if (localPropertiesFile.exists()) {
-              localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
-          }
-
-          def flutterRoot = localProperties.getProperty('flutter.sdk')
-
-          apply plugin: 'com.android.application'
-          apply plugin: 'kotlin-android'
-          apply from: "\$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-
-          android {
-              namespace "com.example.onechatapp"
-              compileSdkVersion 34
-              defaultConfig {
-                  applicationId "com.example.onechatapp"
-                  minSdkVersion 21
-                  targetSdkVersion 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-          }
-
-          flutter {
-              source '../..'
-          }
-          EOF
-
-          # 5. Inject local properties
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
-
-          # 6. Inject ALL required permissions for P2P/Offline
+          # 5. Inject ALL Permissions into Manifest
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
@@ -107,17 +76,15 @@ jobs:
           sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" \/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" \/>' $MANIFEST
 
       - name: Build APK
         run: |
           cd frontend
-          flutter pub get
           flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Legacy-Build
+          name: OneChat-Stable-APK
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
