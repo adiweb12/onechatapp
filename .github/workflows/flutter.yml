@@ -24,33 +24,30 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Prepare & Patch
+      - name: Prepare Project
         run: |
           cd frontend
-          
-          # 1. Create dummy assets so build doesn't fail
           mkdir -p assets/images assets/lottie assets/icons
           touch assets/images/.gitkeep assets/lottie/.gitkeep assets/icons/.gitkeep
-
-          # 2. Generate standard Android files
           flutter create --platforms android .
           flutter pub get
 
-          # 3. Inject P2P Permissions into Manifest
-          # This adds the permissions immediately after the <manifest> tag
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
+      - name: Global Android Patch
+        run: |
+          cd frontend/android
+          
+          # 1. Inject ALL P2P & Network Permissions
+          MANIFEST="app/src/main/AndroidManifest.xml"
           PERMS='<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>\n    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation"/>'
           sed -i "/<manifest/a \    $PERMS" $MANIFEST
 
-          # 4. Patch SDK versions in app/build.gradle
-          # We use a safer replacement that doesn't break the 'flutter' block
-          GRADLE="android/app/build.gradle"
-          sed -i 's/compileSdkVersion.*/compileSdk 34/g' $GRADLE
-          sed -i 's/minSdkVersion.*/minSdk 21/g' $GRADLE
-          sed -i 's/targetSdkVersion.*/targetSdk 34/g' $GRADLE
+          # 2. Force SDK Versions globally via local.properties
+          # This is the safest way to change versions without breaking code syntax
+          echo "flutter.compileSdkVersion=34" >> local.properties
+          echo "flutter.minSdkVersion=21" >> local.properties
+          echo "flutter.targetSdkVersion=34" >> local.properties
 
-          # 5. Fix the Bluetooth Plugin "unknown property flutter" crash
-          # We force the plugin to use SDK 34 directly in the pub-cache
+          # 3. Patch the Bluetooth plugin's old build style
           find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/compileSdkVersion.*/compileSdk 34/g' {} +
           find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/targetSdkVersion.*/targetSdk 34/g' {} +
 
