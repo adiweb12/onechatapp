@@ -32,24 +32,32 @@ jobs:
           flutter create --platforms android .
           flutter pub get
 
-      - name: Global Android Patch
+      - name: Patch Android Project
         run: |
           cd frontend/android
           
           # 1. Inject ALL P2P & Network Permissions
           MANIFEST="app/src/main/AndroidManifest.xml"
-          PERMS='<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>\n    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation"/>'
-          sed -i "/<manifest/a \    $PERMS" $MANIFEST
+          # Use a simpler injection method to avoid shell escaping issues
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>' $MANIFEST
+          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation"/>' $MANIFEST
 
-          # 2. Force SDK Versions globally via local.properties
-          # This is the safest way to change versions without breaking code syntax
-          echo "flutter.compileSdkVersion=34" >> local.properties
-          echo "flutter.minSdkVersion=21" >> local.properties
-          echo "flutter.targetSdkVersion=34" >> local.properties
-
-          # 3. Patch the Bluetooth plugin's old build style
-          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/compileSdkVersion.*/compileSdk 34/g' {} +
-          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/targetSdkVersion.*/targetSdk 34/g' {} +
+          # 2. FORCESdkVersion 21 and 34 in build.gradle
+          # This specifically targets the lines that the error log complained about
+          GRADLE="app/build.gradle"
+          sed -i 's/minSdkVersion.*/minSdkVersion 21/g' $GRADLE
+          sed -i 's/targetSdkVersion.*/targetSdkVersion 34/g' $GRADLE
+          sed -i 's/compileSdkVersion.*/compileSdkVersion 34/g' $GRADLE
+          
+          # 3. Patch the Bluetooth plugin hidden in pub-cache
+          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/compileSdkVersion.*/compileSdkVersion 34/g' {} +
+          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/minSdkVersion.*/minSdkVersion 21/g' {} +
 
       - name: Build APK
         run: |
@@ -59,5 +67,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Final-APK
+          name: OneChat-Stable-APK
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
