@@ -1,0 +1,75 @@
+name: Build OneChat APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+
+      - name: Prepare Android Environment
+        run: |
+          cd frontend
+          
+          # 1. Generate the Android folder
+          flutter create --platforms android .
+          
+          # 2. Inject ALL requested permissions into Manifest
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          
+          # Internet & Network
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"\/>' $MANIFEST
+          
+          # WiFi & Hotspot
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"\/>' $MANIFEST
+          
+          # Bluetooth (Legacy + Modern Android)
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" \/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"\/>' $MANIFEST
+
+          # 3. Hardfix the Flutter property error
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+          echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
+          echo "flutter.compileSdkVersion=34" >> android/local.properties
+          echo "flutter.targetSdkVersion=34" >> android/local.properties
+          echo "flutter.minSdkVersion=21" >> android/local.properties
+
+          # 4. Inject subproject fix for plugins
+          sed -i "/allprojects {/a \    subprojects {\n        ext.flutter = [\n            compileSdkVersion: 34,\n            minSdkVersion: 21,\n            targetSdkVersion: 34\n        ]\n    }" android/build.gradle
+
+      - name: Run Build
+        run: |
+          cd frontend
+          flutter pub get
+          flutter build apk --release --no-pub
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneChat-Final-APK
+          path: frontend/build/app/outputs/flutter-apk/app-release.apk
