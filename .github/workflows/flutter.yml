@@ -24,48 +24,46 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Fix Android Repositories & Permissions
+      - name: Force Build Configuration
         run: |
           cd frontend
           
-          # 1. Re-initialize basic android files
+          # 1. Create basic structure
           flutter create --platforms android .
           
-          # 2. FORCE a correct settings.gradle with Plugin Repositories
-          # This fixes the "com.android.application not found" error
+          # 2. FORCE a production-grade settings.gradle
+          # This tells Gradle exactly which version of Android tools to use
           cat <<EOF > android/settings.gradle
           pluginManagement {
+              def flutterSdkPath = {
+                  def properties = new Properties()
+                  file("local.properties").withInputStream { properties.load(it) }
+                  def flutterSdkPath = properties.getProperty("flutter.sdk")
+                  assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
+                  return flutterSdkPath
+              }()
+
+              includeBuild("\$flutterSdkPath/packages/flutter_tools/gradle")
+
               repositories {
                   google()
                   mavenCentral()
                   gradlePluginPortal()
               }
           }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "onechat"
-          include ":app"
 
-          def flutterSdkPath = {
-              def properties = new Properties()
-              file("local.properties").withInputStream { properties.load(it) }
-              def flutterSdkPath = properties.getProperty("flutter.sdk")
-              assert flutterSdkPath != null, "flutter.sdk not set in local.properties"
-              return flutterSdkPath
-          }()
-          includeBuild("\$flutterSdkPath/packages/flutter_tools/gradle")
+          plugins {
+              id "dev.flutter.flutter-gradle-plugin" version "1.0.0" apply false
+              id "com.android.application" version "8.2.1" apply false
+              id "org.jetbrains.kotlin.android" version "1.8.22" apply false
+          }
+
+          include ":app"
           EOF
 
-          # 3. Setup local.properties with correct paths
+          # 3. Fix local.properties
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
           echo "flutter.sdk=$FLUTTER_ROOT" >> android/local.properties
-          echo "flutter.versionName=1.0.0" >> android/local.properties
-          echo "flutter.versionCode=1" >> android/local.properties
           echo "flutter.minSdkVersion=21" >> android/local.properties
           echo "flutter.targetSdkVersion=34" >> android/local.properties
           echo "flutter.compileSdkVersion=34" >> android/local.properties
@@ -77,7 +75,6 @@ jobs:
           sed -i '/<application/i \    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"\/>' $MANIFEST
           sed -i '/<application/i \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"\/>' $MANIFEST
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"\/>' $MANIFEST
 
       - name: Build APK
         run: |
@@ -88,5 +85,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Final-APK
+          name: OneChat-Built-APK
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
