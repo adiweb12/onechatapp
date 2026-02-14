@@ -24,89 +24,35 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Standardize Project
+      - name: Prepare & Patch
         run: |
           cd frontend
-          # 1. Ensure asset directories exist
+          
+          # 1. Create dummy assets so build doesn't fail
           mkdir -p assets/images assets/lottie assets/icons
           touch assets/images/.gitkeep assets/lottie/.gitkeep assets/icons/.gitkeep
 
-          # 2. Create base Android structure
+          # 2. Generate standard Android files
           flutter create --platforms android .
           flutter pub get
 
-      - name: Inject Permissions & Versions
-        run: |
-          cd frontend/android
-          
-          # 1. Update Manifest with ALL P2P Permissions
-          cat <<EOF > app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET"/>
-              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
-              <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
-              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
-              <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
-              <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation"/>
-              
-              <application
-                  android:label="onechatapp"
-                  android:name="\${applicationName}"
-                  android:icon="@mipmap/ic_launcher">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:launchMode="singleTop"
-                      android:theme="@style/LaunchTheme"
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
-                      android:hardwareAccelerated="true"
-                      android:windowSoftInputMode="adjustResize">
-                      <meta-data
-                        android:name="io.flutter.embedding.android.NormalTheme"
-                        android:resource="@style/NormalTheme"
-                        />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <meta-data
-                      android:name="flutterEmbedding"
-                      android:value="2" />
-              </application>
-          </manifest>
-          EOF
+          # 3. Inject P2P Permissions into Manifest
+          # This adds the permissions immediately after the <manifest> tag
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          PERMS='<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>\n    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation"/>'
+          sed -i "/<manifest/a \    $PERMS" $MANIFEST
 
-          # 2. Overwrite app/build.gradle with correct SDK 34 syntax
-          cat <<EOF > app/build.gradle
-          plugins {
-              id "com.android.application"
-              id "kotlin-android"
-              id "dev.flutter.flutter-gradle-plugin"
-          }
+          # 4. Patch SDK versions in app/build.gradle
+          # We use a safer replacement that doesn't break the 'flutter' block
+          GRADLE="android/app/build.gradle"
+          sed -i 's/compileSdkVersion.*/compileSdk 34/g' $GRADLE
+          sed -i 's/minSdkVersion.*/minSdk 21/g' $GRADLE
+          sed -i 's/targetSdkVersion.*/targetSdk 34/g' $GRADLE
 
-          android {
-              namespace "com.onechat.app"
-              compileSdk 34
-
-              defaultConfig {
-                  applicationId "com.onechat.app"
-                  minSdk 21
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0"
-              }
-          }
-          EOF
-
-      - name: Final Plugin Patch
-        run: |
-          # Patch the Bluetooth plugin directly in the cache to avoid "unknown property flutter"
-          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/compileSdkVersion.*/compileSdkVersion 34/g' {} +
-          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/targetSdkVersion.*/targetSdkVersion 34/g' {} +
+          # 5. Fix the Bluetooth Plugin "unknown property flutter" crash
+          # We force the plugin to use SDK 34 directly in the pub-cache
+          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/compileSdkVersion.*/compileSdk 34/g' {} +
+          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/targetSdkVersion.*/targetSdk 34/g' {} +
 
       - name: Build APK
         run: |
@@ -116,5 +62,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Working-Build
+          name: OneChat-Final-APK
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
