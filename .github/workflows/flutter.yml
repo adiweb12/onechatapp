@@ -24,48 +24,40 @@ jobs:
         with:
           flutter-version: '3.19.0'
 
-      - name: Prepare Project
+      - name: Prepare & Permissions
         run: |
           cd frontend
+          # 1. Setup directories
           mkdir -p assets/images assets/lottie assets/icons
           touch assets/images/.gitkeep assets/lottie/.gitkeep assets/icons/.gitkeep
+          
+          # 2. Create Android files
           flutter create --platforms android .
           flutter pub get
 
-      - name: Patch Android Project
-        run: |
-          cd frontend/android
-          
-          # 1. Inject ALL P2P & Network Permissions
-          MANIFEST="app/src/main/AndroidManifest.xml"
-          # Use a simpler injection method to avoid shell escaping issues
+          # 3. Inject P2P & Internet Permissions
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.INTERNET"/>' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>' $MANIFEST
-          sed -i '/<manifest/a \    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>' $MANIFEST
           sed -i '/<manifest/a \    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation"/>' $MANIFEST
-
-          # 2. FORCESdkVersion 21 and 34 in build.gradle
-          # This specifically targets the lines that the error log complained about
-          GRADLE="app/build.gradle"
-          sed -i 's/minSdkVersion.*/minSdkVersion 21/g' $GRADLE
-          sed -i 's/targetSdkVersion.*/targetSdkVersion 34/g' $GRADLE
-          sed -i 's/compileSdkVersion.*/compileSdkVersion 34/g' $GRADLE
-          
-          # 3. Patch the Bluetooth plugin hidden in pub-cache
-          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/compileSdkVersion.*/compileSdkVersion 34/g' {} +
-          find /home/runner/.pub-cache -name "build.gradle" -path "**/flutter_blue_plus_android*/*" -exec sed -i 's/minSdkVersion.*/minSdkVersion 21/g' {} +
 
       - name: Build APK
         run: |
           cd frontend
-          flutter build apk --release --no-tree-shake-icons
+          # We pass the versions directly here to avoid breaking the build.gradle file
+          flutter build apk --release \
+            --build-name=1.0.0 \
+            --build-number=1 \
+            --no-tree-shake-icons \
+            --dart-define=minSdkVersion=21 \
+            --dart-define=targetSdkVersion=34
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OneChat-Stable-APK
+          name: OneChat-Direct-Build
           path: frontend/build/app/outputs/flutter-apk/app-release.apk
